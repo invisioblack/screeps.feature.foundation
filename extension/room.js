@@ -1,306 +1,400 @@
 
+const STRUCTURE_REANALYSYS = 10010;
+
 let mod = {};
 module.exports = mod;
 
-mod.extend = function(){
+function Container(room){
+    this.room = room;
 
-    let Container = function(room){
-        this.room = room;
-
-        Object.defineProperties(this, {
-            'all': {
-                configurable: true,
-                get: function() {
-                    if( this.room.persistent.container === undefined ) {
-                        this.room.saveContainers();
-                    }
-                    if( this._container === undefined ){
-                        this._container = [];
-                        let add = entry => {
-                            let cont = Game.getObjectById(entry.id);
-                            if( cont != null ) {
-                                _.assign(cont, entry);
-                                this._container.push(cont);
-                            }
-                        };
-                        _.forEach(this.room.persistent.container, add);
-                    }
-                    return this._container;
-                }
-            },
-            'controller': {
-                configurable: true,
-                get: function() {
-                    if( this._controller === undefined ){
-                        if( this.room.my && this.room.controller.memory && this.room.controller.memory.storage ){
-                            this._controller = [Game.getObjectById(this.room.controller.memory.storage)];
-                            if( !this._controller[0] ) delete this.room.controller.memory.storage;
-                        } else {
-                            let byType = c => c.controller === true;
-                            this._controller = _.filter(this.all, byType);
-                        }
-                    }
-                    return this._controller;
-                }
-            },
-            'in': {
-                configurable: true,
-                get: function() {
-                    if( this._in === undefined ){
-                        let byType = c => c.controller === false || c.demolish === true;
-                        this._in = _.filter(this.all, byType);
-                        // add managed
-                        let isFull = c => c.sum >= (c.storeCapacity * (1-MANAGED_CONTAINER_TRIGGER));
-                        this._in = this._in.concat(this.managed.filter(isFull));
-                    }
-                    return this._in;
-                }
-            },
-            'out': {
-                configurable: true,
-                get: function() {
-                    if( this._out === undefined ){
-                        let byType = c => c.controller === true && c.demolish === false;
-                        this._out = _.filter(this.all, byType);
-                        // add managed
-                        let isEmpty = c => c.sum <= (c.storeCapacity * MANAGED_CONTAINER_TRIGGER);
-                        this._out = this._out.concat(this.managed.filter(isEmpty));
-                    }
-                    return this._out;
-                }
-            },
-            'privateers': {
-                configurable: true,
-                get: function() {
-                    if( this._privateers === undefined ){
-                        let byType = c => (c.source === false && c.demolish === false && c.mineral === false && c.sum < c.storeCapacity);
-                        this._privateers = _.filter(this.all, byType);
-                    }
-                    return this._privateers;
-                }
-            },
-            'managed': {
-                configurable: true,
-                get: function() {
-                    if( this._managed === undefined ){
-                        let byType = c => c.source === true && c.controller === true && c.demolish === false;
-                        this._managed = _.filter(this.all, byType);
-                    }
-                    return this._managed;
+    function analyze(){
+        let td = room.persistent;
+        td.container = [];
+        let containers = room.structures.all.filter(
+            structure => structure.structureType == STRUCTURE_CONTAINER
+        );
+        let add = (cont) => {
+            let pos = cont.pos;
+            let minerals = room.minerals;
+            let source = cont.pos.findInRange(room.sources, 2);
+            let mineral = cont.pos.findInRange(minerals, 2);
+            let demolish = FlagDir.filterCustom(flag => flag.color === COLOR_ORANGE && flag.roomName === pos.roomName && flag.x === pos.x && flag.y === pos.y)
+            td.container.push({
+                id: cont.id,
+                source: (source.length > 0),
+                controller: ( cont.pos.getRangeTo(room.controller) < 4 ),
+                mineral: (mineral.length > 0),
+                demolish: demolish.length > 0
+            });
+            let assignContainer = s => {
+                let m = s.memory;
+                if( m.container !== cont.id){
+                    m.container = cont.id;
+                    s.memory = m;
                 }
             }
-        });
-    };
-
-    let Links = function(room){
-        this.room = room;
-
-        Object.defineProperties(this, {
-            'all': {
-                configurable: true,
-                get: function() {
-                    if( this.room.persistent.links === undefined ) {
-                        this.room.saveLinks();
-                    }
-                    if( this._all === undefined ){
-                        this._all = [];
-                        let add = entry => {
-                            let o = Game.getObjectById(entry.id);
-                            if( o != null ) {
-                                _.assign(o, entry);
-                                this._all.push(o);
-                            }
-                        };
-                        _.forEach(this.room.persistent.links, add);
-                    }
-                    return this._all;
-                }
-            },
-            'controller': {
-                configurable: true,
-                get: function() {
-                    if( this._controller === undefined ){
-                        let byType = c => c.controller === true;
-                        this._controller = this.all.filter(byType);
-                    }
-                    return this._controller;
-                }
-            },
-            'storage': {
-                configurable: true,
-                get: function() {
-                    if( this._storage === undefined ) {
-                        let byType = l => l.storage === true;
-                        this._storage = this.all.filter(byType);
-                    }
-                    return this._storage;
-                }
-            },
-            'in': {
-                configurable: true,
-                get: function() {
-                    if( this._in === undefined ) {
-                        let byType = l => l.storage === false && l.controller === false;
-                        this._in = _.filter(this.all, byType);
-                    }
-                    return this._in;
-                }
-            },
-            'privateers': {
-                configurable: true,
-                get: function() {
-                    if( this._privateers === undefined ) {
-                        let byType = l => l.storage === false && l.controller === false && l.source === false && l.energy < l.energyCapacity * 0.85;
-                        this._privateers = _.filter(this.all, byType);
-                    }
-                    return this._privateers;
-                }
-            }
-        });
-    };
-
-    let Structures = function(room){
-        this.room = room;
-        this.created = Game.time;
-        let that = this;
-
-        Object.defineProperties(this, {
-            'all': {
-                configurable: true,
-                get: function() {
-                    if( this._all === undefined ){
-                        this._all = this.room.find(FIND_STRUCTURES);
-                    }
-                    return this._all;
-                }
-            },
-            'repairable': {
-                configurable: true,
-                get: function() {
-                    if( this._repairable === undefined ){
-                        let that = this;
-                        this._repairable = _.sortBy(
-                            that.all.filter(
-                                structure => (
-                                    // is not at 100%
-                                    structure.hits < structure.hitsMax &&
-                                    // not owned room or hits below RCL repair limit
-                                    ( !that.room.my || structure.hits < MAX_REPAIR_LIMIT[that.room.rcl] || structure.hits < (LIMIT_URGENT_REPAIRING + (2*DECAY_AMOUNT[structure.structureType] || 0))) &&
-                                    // not decayable or below threshold
-                                    ( !DECAYABLES.includes(structure.structureType) || (structure.hitsMax - structure.hits) > GAP_REPAIR_DECAYABLE ) &&
-                                    // not pavement art
-                                    ( that.room.pavementArt.indexOf('x'+structure.pos.x+'y'+structure.pos.y+'x') < 0 ) && 
-                                    // not flagged for removal
-                                    ( !FlagDir.list.some(f => f.roomName === structure.pos.roomName && f.color === COLOR_ORANGE && f.x === structure.pos.x && f.y === structure.pos.y) )
-                                )
-                            ),
-                            'hits'
-                        );
-                    }
-                    return this._repairable;
-                }
-            },
-            'urgentRepairable': {
-                configurable: true,
-                get: function() {
-                    if( this._urgentRepairableSites === undefined ){
-                        let isUrgent = site => (site.hits < (LIMIT_URGENT_REPAIRING + (DECAY_AMOUNT[site.structureType] || 0)));
-                        this._urgentRepairableSites = _.filter(this.repairable, isUrgent);
-                    }
-                    return this._urgentRepairableSites;
-                }
-            },
-            'fortifyable': {
-                configurable: true,
-                get: function() {
-                    if( this._fortifyableSites === undefined ){
-                        let that = this;
-                        this._fortifyableSites = _.sortBy(
-                            that.all.filter(
-                                structure => (
-                                    that.room.my &&
-                                    structure.hits < structure.hitsMax &&
-                                    structure.hits < MAX_FORTIFY_LIMIT[that.room.rcl] &&
-                                    ( structure.structureType !== STRUCTURE_CONTAINER || structure.hits < MAX_FORTIFY_CONTAINER ) &&
-                                    ( !DECAYABLES.includes(structure.structureType) || (structure.hitsMax - structure.hits) > GAP_REPAIR_DECAYABLE*3 ) &&
-                                    ( that.room.pavementArt.indexOf('x'+structure.pos.x+'y'+structure.pos.y+'x') < 0 ) && 
-                                    ( !FlagDir.list.some(f => f.roomName === structure.pos.roomName && f.color === COLOR_ORANGE && f.x === structure.pos.x && f.y === structure.pos.y) )
-                                )
-                            ),
-                            'hits'
-                        );
-                    }
-                    return this._fortifyableSites;
-                }
-            },
-            'container' : {
-                configurable: true,
-                get: function() {
-                    if( this._container === undefined ){
-                        this._container = new Container(this.room);
-                    }
-                    return this._container;
-                }
-            },
-            'links' : {
-                configurable: true,
-                get: function() {
-                    if( this._links === undefined ){
-                        this._links = new Links(this.room);
-                    }
-                    return this._links;
-                }
-            }
-        });
-        
-        this.spawns = [];
-        this.towers = [];
-        this.fuelable = [];
-        this.extensions = [];
-        this.feedable = [];
-        this.labs = [];
-        this.keeperLairs = [];
-        this.roads = [];
-        this.asGoals = [];
-
-        let typeHandler = {};
-        typeHandler[STRUCTURE_SPAWN] = structure => {
-            that.spawns.push(structure);
-            that.feedable.push(structure);
+            source.forEach(assignContainer);
+            mineral.forEach(assignContainer);
         };
-        typeHandler[STRUCTURE_EXTENSION] = structure => {
-            that.extensions.push(structure);
-            that.feedable.push(structure);
-        };
-        typeHandler[STRUCTURE_TOWER] = structure => {
-            that.towers.push(structure);
-            if( structure.energy < (structure.energyCapacity * 0.82) )
-                that.fuelable.push(structure);
+        containers.forEach(add);
+        room.persistent = td;
+
+        if( room.terminal !== undefined ) {
+            let source = room.terminal.pos.findInRange(room.sources, 2);
+            let mineral = room.terminal.pos.findInRange(room.minerals, 2);
+            let assignTerminal = s => {
+                let m = s.memory;
+                if( m.terminal !== room.terminal.id){
+                    m.terminal = room.terminal.id;
+                    s.memory = m;
+                }
+            }
+            source.forEach(assignTerminal);
+            mineral.forEach(assignTerminal);
         }
-        typeHandler[STRUCTURE_LAB] = structure => that.labs.push(structure);
-        typeHandler[STRUCTURE_KEEPER_LAIR] = structure => that.keeperLairs.push(structure);
-        typeHandler[STRUCTURE_ROAD] = structure => that.roads.push(structure);
-        typeHandler[STRUCTURE_EXTRACTOR] = structure => that.extractor = structure;
-        typeHandler[STRUCTURE_NUKER] = structure => that.nuker = structure;
-        typeHandler[STRUCTURE_OBSERVER] = structure => that.observer = structure;
-        // STRUCTURE_WALL
-        // STRUCTURE_RAMPART
-        // STRUCTURE_PORTAL
-        // STRUCTURE_CONTROLLER
-        // STRUCTURE_LINK
-        // STRUCTURE_STORAGE
-        // STRUCTURE_POWER_BANK
-        // STRUCTURE_POWER_SPAWN
-        // STRUCTURE_TERMINAL
-        // STRUCTURE_CONTAINER
+        if( room.storage !== undefined ) {
+            let source = room.storage.pos.findInRange(room.sources, 2);
+            let mineral = room.storage.pos.findInRange(room.minerals, 2);
+            let assignStorage = s => {
+                let m = s.memory;
+                if( m.storage !== room.storage.id){
+                    m.storage = room.storage.id;
+                    s.memory = m;
+                }
+            }
+            source.forEach(assignStorage);
+            mineral.forEach(assignStorage);
 
-        let assign = structure => {
-            let handler = typeHandler[structure.structureType];
-            if( handler != null ) handler(structure);
-            this.asGoals.push({pos: structure.pos, range: 1});
+            if( room.storage.pos.getRangeTo(room.controller) < 4 )
+                room.controller.memory.storage = room.storage.id;
+        }
+    }
+
+    Object.defineProperties(this, {
+        'all': {
+            configurable: true,
+            get: function() {
+                if( this.room.persistent.container === undefined || this.room.persistent.containerReset < Game.time) {
+                    analyze();
+                    this.this.room.persistent.containerReset = Game.time + STRUCTURE_REANALYSYS;
+                }
+                if( this._container === undefined ){
+                    this._container = [];
+                    let add = entry => {
+                        let cont = Game.getObjectById(entry.id);
+                        if( cont != null ) {
+                            _.assign(cont, entry);
+                            this._container.push(cont);
+                        }
+                    };
+                    _.forEach(this.room.persistent.container, add);
+                }
+                return this._container;
+            }
+        },
+        'controller': {
+            configurable: true,
+            get: function() {
+                if( this._controller === undefined ){
+                    if( this.room.my && this.room.controller.memory && this.room.controller.memory.storage ){
+                        this._controller = [Game.getObjectById(this.room.controller.memory.storage)];
+                        if( !this._controller[0] ) delete this.room.controller.memory.storage;
+                    } else {
+                        let byType = c => c.controller === true;
+                        this._controller = _.filter(this.all, byType);
+                    }
+                }
+                return this._controller;
+            }
+        },
+        'in': {
+            configurable: true,
+            get: function() {
+                if( this._in === undefined ){
+                    let byType = c => c.controller === false || c.demolish === true;
+                    this._in = _.filter(this.all, byType);
+                    // add managed
+                    let isFull = c => c.sum >= (c.storeCapacity * (1-MANAGED_CONTAINER_TRIGGER));
+                    this._in = this._in.concat(this.managed.filter(isFull));
+                }
+                return this._in;
+            }
+        },
+        'out': {
+            configurable: true,
+            get: function() {
+                if( this._out === undefined ){
+                    let byType = c => c.controller === true && c.demolish === false;
+                    this._out = _.filter(this.all, byType);
+                    // add managed
+                    let isEmpty = c => c.sum <= (c.storeCapacity * MANAGED_CONTAINER_TRIGGER);
+                    this._out = this._out.concat(this.managed.filter(isEmpty));
+                }
+                return this._out;
+            }
+        },
+        'privateers': {
+            configurable: true,
+            get: function() {
+                if( this._privateers === undefined ){
+                    let byType = c => (c.source === false && c.demolish === false && c.mineral === false && c.sum < c.storeCapacity);
+                    this._privateers = _.filter(this.all, byType);
+                }
+                return this._privateers;
+            }
+        },
+        'managed': {
+            configurable: true,
+            get: function() {
+                if( this._managed === undefined ){
+                    let byType = c => c.source === true && c.controller === true && c.demolish === false;
+                    this._managed = _.filter(this.all, byType);
+                }
+                return this._managed;
+            }
+        }
+    });
+};
+
+function Links(room){
+    this.room = room;
+    
+    function analyze(){
+        let td = room.persistent;
+        td.links = [];
+
+        let isLink = structure => structure instanceof StructureLink;
+        let links = room.structures.all.filter(isLink);        
+        let storageLinks = room.storage ? room.storage.pos.findInRange(links, 2).map(l => l.id) : [];
+        
+        // for each link add to memory
+        let add = (link) => {
+            let isControllerLink = ( link.pos.getRangeTo(room.controller) < 4 );
+            let isSource = false;
+            if( !isControllerLink ) {
+                let source = link.pos.findInRange(room.sources, 2);
+                let assign = s => {
+                    let m = s.memory;
+                    if( m.link !== link.id){
+                        m.link = link.id;
+                        s.memory = m;
+                    }
+                }
+                source.forEach(assign);
+                isSource = source.length > 0;
+            }
+            td.links.push({
+                id: link.id,
+                storage: storageLinks.includes(link.id),
+                controller: isControllerLink,
+                source: isSource
+            });
         };
-        this.all.forEach(assign);
+        links.forEach(add);
+        room.persistent = td;
+    }
+
+    Object.defineProperties(this, {
+        'all': {
+            configurable: true,
+            get: function() {
+                if( this.room.persistent.links === undefined || this.room.persistent.linkReset < Game.time) {
+                    analyze();
+                    this.this.room.persistent.linkReset = Game.time + STRUCTURE_REANALYSYS;
+                }
+                if( this._all === undefined ){
+                    this._all = [];
+                    let add = entry => {
+                        let o = Game.getObjectById(entry.id);
+                        if( o != null ) {
+                            _.assign(o, entry);
+                            this._all.push(o);
+                        }
+                    };
+                    _.forEach(this.room.persistent.links, add);
+                }
+                return this._all;
+            }
+        },
+        'controller': {
+            configurable: true,
+            get: function() {
+                if( this._controller === undefined ){
+                    let byType = c => c.controller === true;
+                    this._controller = this.all.filter(byType);
+                }
+                return this._controller;
+            }
+        },
+        'storage': {
+            configurable: true,
+            get: function() {
+                if( this._storage === undefined ) {
+                    let byType = l => l.storage === true;
+                    this._storage = this.all.filter(byType);
+                }
+                return this._storage;
+            }
+        },
+        'in': {
+            configurable: true,
+            get: function() {
+                if( this._in === undefined ) {
+                    let byType = l => l.storage === false && l.controller === false;
+                    this._in = _.filter(this.all, byType);
+                }
+                return this._in;
+            }
+        },
+        'privateers': {
+            configurable: true,
+            get: function() {
+                if( this._privateers === undefined ) {
+                    let byType = l => l.storage === false && l.controller === false && l.source === false && l.energy < l.energyCapacity * 0.85;
+                    this._privateers = _.filter(this.all, byType);
+                }
+                return this._privateers;
+            }
+        }
+    });
+};
+
+function Structures(room){
+    this.room = room;
+    this.created = Game.time;
+    let that = this;
+
+    Object.defineProperties(this, {
+        'all': {
+            configurable: true,
+            get: function() {
+                if( this._all === undefined ){
+                    this._all = this.room.find(FIND_STRUCTURES);
+                }
+                return this._all;
+            }
+        },
+        /*
+        'repairable': {
+            configurable: true,
+            get: function() {
+                if( this._repairable === undefined ){
+                    let that = this;
+                    this._repairable = _.sortBy(
+                        that.all.filter(
+                            structure => (
+                                // is not at 100%
+                                structure.hits < structure.hitsMax &&
+                                // not owned room or hits below RCL repair limit
+                                ( !that.room.my || structure.hits < MAX_REPAIR_LIMIT[that.room.rcl] || structure.hits < (LIMIT_URGENT_REPAIRING + (2*DECAY_AMOUNT[structure.structureType] || 0))) &&
+                                // not decayable or below threshold
+                                ( !DECAYABLES.includes(structure.structureType) || (structure.hitsMax - structure.hits) > GAP_REPAIR_DECAYABLE ) &&
+                                // not pavement art
+                                ( that.room.pavementArt.indexOf('x'+structure.pos.x+'y'+structure.pos.y+'x') < 0 ) && 
+                                // not flagged for removal
+                                ( !FlagDir.list.some(f => f.roomName === structure.pos.roomName && f.color === COLOR_ORANGE && f.x === structure.pos.x && f.y === structure.pos.y) )
+                            )
+                        ),
+                        'hits'
+                    );
+                }
+                return this._repairable;
+            }
+        },
+        'fortifyable': {
+            configurable: true,
+            get: function() {
+                if( this._fortifyableSites === undefined ){
+                    let that = this;
+                    this._fortifyableSites = _.sortBy(
+                        that.all.filter(
+                            structure => (
+                                that.room.my &&
+                                structure.hits < structure.hitsMax &&
+                                structure.hits < MAX_FORTIFY_LIMIT[that.room.rcl] &&
+                                ( structure.structureType !== STRUCTURE_CONTAINER || structure.hits < MAX_FORTIFY_CONTAINER ) &&
+                                ( !DECAYABLES.includes(structure.structureType) || (structure.hitsMax - structure.hits) > GAP_REPAIR_DECAYABLE*3 ) &&
+                                ( that.room.pavementArt.indexOf('x'+structure.pos.x+'y'+structure.pos.y+'x') < 0 ) && 
+                                ( !FlagDir.list.some(f => f.roomName === structure.pos.roomName && f.color === COLOR_ORANGE && f.x === structure.pos.x && f.y === structure.pos.y) )
+                            )
+                        ),
+                        'hits'
+                    );
+                }
+                return this._fortifyableSites;
+            }
+        },
+        */
+        'container' : {
+            configurable: true,
+            get: function() {
+                if( this._container === undefined ){
+                    this._container = new Container(this.room);
+                }
+                return this._container;
+            }
+        },
+        'links' : {
+            configurable: true,
+            get: function() {
+                if( this._links === undefined ){
+                    this._links = new Links(this.room);
+                }
+                return this._links;
+            }
+        }
+    });
+    
+    this.spawns = [];
+    this.towers = [];
+    this.fuelable = [];
+    this.extensions = [];
+    this.feedable = [];
+    this.labs = [];
+    this.keeperLairs = [];
+    this.roads = [];
+    this.asGoals = [];
+
+    let typeHandler = {};
+    typeHandler[STRUCTURE_SPAWN] = structure => {
+        that.spawns.push(structure);
+        that.feedable.push(structure);
     };
+    typeHandler[STRUCTURE_EXTENSION] = structure => {
+        that.extensions.push(structure);
+        that.feedable.push(structure);
+    };
+    typeHandler[STRUCTURE_TOWER] = structure => {
+        that.towers.push(structure);
+        if( structure.energy < (structure.energyCapacity * 0.82) )
+            that.fuelable.push(structure);
+    }
+    typeHandler[STRUCTURE_LAB] = structure => that.labs.push(structure);
+    typeHandler[STRUCTURE_KEEPER_LAIR] = structure => that.keeperLairs.push(structure);
+    typeHandler[STRUCTURE_ROAD] = structure => that.roads.push(structure);
+    typeHandler[STRUCTURE_EXTRACTOR] = structure => that.extractor = structure;
+    typeHandler[STRUCTURE_NUKER] = structure => that.nuker = structure;
+    typeHandler[STRUCTURE_OBSERVER] = structure => that.observer = structure;
+    // STRUCTURE_WALL
+    // STRUCTURE_RAMPART
+    // STRUCTURE_PORTAL
+    // STRUCTURE_CONTROLLER
+    // STRUCTURE_LINK
+    // STRUCTURE_STORAGE
+    // STRUCTURE_POWER_BANK
+    // STRUCTURE_POWER_SPAWN
+    // STRUCTURE_TERMINAL
+    // STRUCTURE_CONTAINER
+
+    let assign = structure => {
+        let handler = typeHandler[structure.structureType];
+        if( handler != null ) handler(structure);
+        this.asGoals.push({pos: structure.pos, range: 1});
+    };
+    this.all.forEach(assign);
+};
+
+mod.extend = function(){
 
     Object.defineProperties(Room.prototype, {
         'persistent': {
@@ -515,6 +609,7 @@ mod.extend = function(){
                 return this._allCreeps;
             }
         },
+        /*
         'hostiles': {
             configurable: true,
             get: function() {
@@ -528,6 +623,7 @@ mod.extend = function(){
                 return this._hostiles;
             }
         },
+        */
         'combatCreeps': {
             configurable: true,
             get: function() {
@@ -547,15 +643,6 @@ mod.extend = function(){
                 return this._casualties;
             }
         },
-        'towerHealable': {
-            configurable: true,
-            get: function() {
-                if( this._towerHealable === undefined ){
-                    this._towerHealable = this.casualties.filter(creep => !creep.hasActiveBodyparts(HEAL));
-                }
-                return this._towerHealable;
-            }
-        },
         'situation': {
             configurable: true,
             get: function() {
@@ -566,17 +653,6 @@ mod.extend = function(){
                     }
                 }
                 return this._situation;
-            }
-        },
-        'roadConstructionTrace': {
-            configurable: true,
-            get: function () {
-                let memory = this.volatile;
-                if( memory.roadConstructionTrace === undefined ) {
-                    memory.roadConstructionTrace = {};
-                    this.volatile = memory;
-                }
-                return this.volatile.roadConstructionTrace;
             }
         },
         'conserveForDefense': {
@@ -624,8 +700,29 @@ mod.extend = function(){
         'minerals': {
             configurable:true,
             get: function () {
-                if( this.persistent.minerals === undefined ) {
-                    this.saveMinerals();
+                if( this.persistent.minerals === undefined || this.persistent.mineralReset < Game.time ) {                    
+                    let that = this;
+                    let toPos = o => {
+                        return {
+                            x: o.pos.x,
+                            y: o.pos.y
+                        };
+                    };
+                    let isExtractor = structure => structure instanceof StructureExtractor;
+                    let extractorPos = this.structures.all.filter(isExtractor).map(toPos);
+                    let hasExtractor = m => _.some(extractorPos, {
+                        x: m.pos.x,
+                        y: m.pos.y
+                    });
+                    this._minerals = this.find(FIND_MINERALS).filter(hasExtractor);
+                    
+                    let td = this.persistent;
+                    if( this._minerals.length > 0 ){
+                        td.minerals = _.map(that._minerals, 'id');
+                    } else td.minerals = [];
+                    this.persistent = td;
+                    
+                    this.persistent.mineralReset = Game.time + STRUCTURE_REANALYSYS;
                 }
                 if( this._minerals === undefined ){
                     this._minerals = [];
@@ -789,126 +886,6 @@ mod.extend = function(){
             //return ((order - (site.progress / site.progressTotal)) * 100) + pos.getRangeTo(site);
         };
         return _.min(sites, rangeOrder);
-    };
-
-    Room.prototype.saveContainers = function(){
-        let td = this.persistent;
-        td.container = [];
-        let containers = this.structures.all.filter(
-            structure => structure.structureType == STRUCTURE_CONTAINER
-        );
-        let add = (cont) => {
-            let pos = cont.pos;
-            let minerals = this.minerals;
-            let source = cont.pos.findInRange(this.sources, 2);
-            let mineral = cont.pos.findInRange(minerals, 2);
-            let demolish = FlagDir.filterCustom(flag => flag.color === COLOR_ORANGE && flag.roomName === pos.roomName && flag.x === pos.x && flag.y === pos.y)
-            td.container.push({
-                id: cont.id,
-                source: (source.length > 0),
-                controller: ( cont.pos.getRangeTo(this.controller) < 4 ),
-                mineral: (mineral.length > 0),
-                demolish: demolish.length > 0
-            });
-            let assignContainer = s => {
-                let m = s.memory;
-                if( m.container !== cont.id){
-                    m.container = cont.id;
-                    s.memory = m;
-                }
-            }
-            source.forEach(assignContainer);
-            mineral.forEach(assignContainer);
-        };
-        containers.forEach(add);
-        this.persistent = td;
-
-        if( this.terminal !== undefined ) {
-            let source = this.terminal.pos.findInRange(this.sources, 2);
-            let mineral = this.terminal.pos.findInRange(this.minerals, 2);
-            let assignTerminal = s => {
-                let m = s.memory;
-                if( m.terminal !== this.terminal.id){
-                    m.terminal = this.terminal.id;
-                    s.memory = m;
-                }
-            }
-            source.forEach(assignTerminal);
-            mineral.forEach(assignTerminal);
-        }
-        if( this.storage !== undefined ) {
-            let source = this.storage.pos.findInRange(this.sources, 2);
-            let mineral = this.storage.pos.findInRange(this.minerals, 2);
-            let assignStorage = s => {
-                let m = s.memory;
-                if( m.storage !== this.storage.id){
-                    m.storage = this.storage.id;
-                    s.memory = m;
-                }
-            }
-            source.forEach(assignStorage);
-            mineral.forEach(assignStorage);
-
-            if( this.storage.pos.getRangeTo(this.controller) < 4 )
-                this.controller.memory.storage = this.storage.id;
-        }
-    };
-    Room.prototype.saveLinks = function(){
-        let that = this;
-        let td = this.persistent;
-        td.links = [];
-
-        let isLink = structure => structure instanceof StructureLink;
-        let links = this.structures.all.filter(isLink);        
-        let storageLinks = this.storage ? this.storage.pos.findInRange(links, 2).map(l => l.id) : [];
-        
-        // for each link add to memory
-        let add = (link) => {
-            let isControllerLink = ( link.pos.getRangeTo(that.controller) < 4 );
-            let isSource = false;
-            if( !isControllerLink ) {
-                let source = link.pos.findInRange(that.sources, 2);
-                let assign = s => {
-                    let m = s.memory;
-                    if( m.link !== link.id){
-                        m.link = link.id;
-                        s.memory = m;
-                    }
-                }
-                source.forEach(assign);
-                isSource = source.length > 0;
-            }
-            td.links.push({
-                id: link.id,
-                storage: storageLinks.includes(link.id),
-                controller: isControllerLink,
-                source: isSource
-            });
-        };
-        links.forEach(add);
-        this.persistent = td;
-    };
-    Room.prototype.saveMinerals = function() {
-        let that = this;
-        let toPos = o => {
-            return {
-                x: o.pos.x,
-                y: o.pos.y
-            };
-        };
-        let isExtractor = structure => structure instanceof StructureExtractor;
-        let extractorPos = this.structures.all.filter(isExtractor).map(toPos);
-        let hasExtractor = m => _.some(extractorPos, {
-            x: m.pos.x,
-            y: m.pos.y
-        });
-        this._minerals = this.find(FIND_MINERALS).filter(hasExtractor);
-        
-        let td = this.persistent;
-        if( this._minerals.length > 0 ){
-            td.minerals = _.map(that._minerals, 'id');
-        } else td.minerals = [];
-        this.persistent = td;
     };
 
     Room.prototype.linkDispatcher = function () {
