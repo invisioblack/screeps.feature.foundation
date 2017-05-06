@@ -9,9 +9,6 @@ mod.addById = function(array, id){
     if( obj ) array.push(obj);
     return array;
 };
-mod.posToString = function(pos){
-    return `${pos.roomName}x${pos.x}y${pos.y}`;
-};
 mod.guid = function(){
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
         let r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);

@@ -395,6 +395,7 @@ function Structures(room){
 };
 
 mod.extend = function(){
+    const USERNAME = context.settings.USERNAME;
 
     Object.defineProperties(Room.prototype, {
         'persistent': {
@@ -750,7 +751,7 @@ mod.extend = function(){
             configurable: true,
             get: function () {
                 if( this._my === undefined ) {
-                    this._my = this.owner === global.USERNAME;
+                    this._my = this.owner === USERNAME;
                 }
                 return this._my;
             }
