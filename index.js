@@ -5,7 +5,7 @@ module.exports = mod;
 mod.dependencies = [];
 mod.install = function(){
     context.requiresMemory = false;
-    context.memoryPartitions = ['objects', 'volatile', 'rooms', 'hostiles', 'flags'];
+    context.memoryPartitions = ['objects', 'volatile', 'rooms', 'hostiles', 'flags', 'creeps'];
     
     context.defaultValue('USERNAME', 'unknown');
 
