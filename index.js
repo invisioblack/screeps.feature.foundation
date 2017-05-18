@@ -8,6 +8,11 @@ mod.install = function(){
     context.memoryPartitions = ['objects', 'volatile', 'rooms', 'hostiles', 'flags', 'creeps'];
     
     context.defaultValue('USERNAME', 'unknown');
+    context.defaultValue('LOG_VISUAL_BODY', true);
+
+    context.logScopes = {
+        military: {severity: 'verbose'}
+    };
 
     context.inject(global, 'extension.global');
     context.load('extension.misc').extend();

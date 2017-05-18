@@ -1,5 +1,7 @@
 
 const STRUCTURE_REANALYSYS = 10010;
+let feature = context;
+const USERNAME = context.settings.USERNAME;
 
 let mod = {};
 module.exports = mod;
@@ -395,7 +397,6 @@ function Structures(room){
 };
 
 mod.extend = function(){
-    const USERNAME = context.settings.USERNAME;
 
     Object.defineProperties(Room.prototype, {
         'persistent': {
@@ -924,7 +925,7 @@ mod.extend = function(){
     Room.prototype.processInvaders = function(){
         //let that = this;        
         let logNewHostile = creep => {
-            let body = LOG_VISUAL_BODY ? creep.bodyDisplay : creep.bodyCount;
+            let body = feature.settings.LOG_VISUAL_BODY ? creep.bodyDisplay : creep.bodyCount;
             if( creep.owner.username === 'Invader' ) {
                 log(`Invader ${creep.id}!`, {
                     scope: 'military', 
@@ -964,12 +965,23 @@ mod.extend = function(){
                         roomName: creep.pos.roomName
                     }, body);
                 } else {
-                    log(`Hostile intruder ${creep.id} from "${creep.owner.username}"`, {
+                    const status = creep.room.my ? "owned" : "reserved";
+                    let intel = "";
+                    if( global.lib !== undefined && global.lib.roomIntel !== undefined ){
+                        const alliance = global.lib.roomIntel.getUserAlliance(creep.owner.username);
+                        if( alliance === false) intel = " (no alliance)";
+                        else intel = " (" + alliance + ")";
+                    }
+
+                    log(`Hostile intruder ${creep.id} from "${creep.owner.username}${intel}" in ${status} room ${creep.pos.roomName}`, {
                         scope: 'military', 
                         severity: 'warning', 
                         roomName: creep.pos.roomName
                     }, body);
-                    Game.notify(`Hostile intruder ${creep.id} (${JSON.stringify(creep.bodyCount)}) from "${creep.owner.username}" in room ${creep.pos.roomName} at ${toDateTimeString(toLocalDate(new Date()))}`);
+
+                    const message = `Hostile intruder ${creep.id} ${JSON.stringify(creep.bodyCount)} from "${creep.owner.username}${intel}" in ${status} room ${creep.pos.roomName}`;
+                    Game.notify(message);
+                    if(global.alert !== undefined) global.alert(message);
                 }
             }
         };
@@ -1150,3 +1162,54 @@ mod.adjacentRooms = function(roomName, range = 1){
     }
     return names;
 };
+
+function flush(){
+    // param: room
+    Room.foundOwned = new LiteEvent();
+
+    // param: room
+    Room.foundReserved = new LiteEvent();
+    
+    // param: room
+    Room.foundOther = new LiteEvent();
+
+    // ocurrs when a new invader has been spotted for the first time
+    // param: invader creep
+    Room.newInvader = new LiteEvent();
+    
+    // ocurrs every tick since an invader has been spotted until its not in that room anymore (will also occur when no sight until validated its gone)
+    // param: invader creep id
+    Room.knownInvader = new LiteEvent();
+    
+    // ocurrs when an invader is not in the same room anymore (or died). will only occur when (or as soon as) there is sight in the room.
+    // param: invader creep id
+    Room.goneInvader = new LiteEvent();
+    
+    // ocurrs when a room is considered to have collapsed. Will occur each tick until solved.
+    // param: room
+    Room.collapsed = new LiteEvent();
+}
+
+function analyze(){
+    function found(room){
+        if(room.my) Room.foundOwned.trigger(room);
+        else if(room.myReservation) Room.foundReserved.trigger(room);
+        else Room.foundOther.trigger(room);
+        room.processInvaders();
+    };
+    _.forEach(Game.rooms, found);
+}
+
+function execute(){
+    Room.foundOwned.release();
+    Room.foundReserved.release();
+    Room.foundOther.release();
+    Room.newInvader.release();
+    Room.knownInvader.release();
+    Room.goneInvader.release();
+    Room.collapsed.release();
+}
+
+context.flush.on(flush);
+context.analyze.on(analyze);
+context.execute.on(execute);
