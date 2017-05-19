@@ -973,101 +973,6 @@ Room.prototype.linkDispatcher = function () {
         filledStorage.forEach(handleFilledStorage);
     }
 };
-Room.prototype.processInvaders = function(){
-    //let that = this;        
-    let logNewHostile = creep => {
-        let body = feature.settings.LOG_VISUAL_BODY ? creep.bodyDisplay : creep.bodyCount;
-        if( creep.owner.username === 'Invader' ) {
-            log(`Invader ${creep.id}!`, {
-                scope: 'military', 
-                severity: 'information', 
-                roomName: creep.pos.roomName
-            }, body);
-        }
-        else if( creep.owner.username === 'Source Keeper' ) {
-            log(`Source Keeper ${creep.id}!`, {
-                scope: 'military', 
-                severity: 'verbose', 
-                roomName: creep.pos.roomName
-            }, body);
-        }
-        else if(PLAYER_WHITELIST.includes(creep.owner.username)){
-            log(`Whitelisted intruder ${creep.id} from ${creep.owner.username}!`, {
-                scope: 'military', 
-                severity: 'information', 
-                roomName: creep.pos.roomName
-            }, body);
-        }
-        else {
-            let ignore = null;
-            if( DEFENSE_BLACKLIST.includes(creep.pos.roomName) ){
-                ignore = 'verbose';
-            }
-            // if not our room and not our reservation
-            else if( !creep.room.my && !creep.room.myReservation ) {
-                let validColor = flagEntry => (flagEntry.color == FLAG_COLOR.claim.color);
-                let flag = FlagDir.find(validColor, creep.pos, true);
-                if( !flag ) ignore = 'information'; // ignore invader
-            }
-            if( ignore ) {
-                log(`Foreign creep ${creep.id} from "${creep.owner.username}"`, {
-                    scope: 'military', 
-                    severity: ignore, 
-                    roomName: creep.pos.roomName
-                }, body);
-            } else {
-                const status = creep.room.my ? "owned" : "reserved";
-                let intel = "";
-                if( global.lib !== undefined && global.lib.roomIntel !== undefined ){
-                    const alliance = global.lib.roomIntel.getUserAlliance(creep.owner.username);
-                    if( alliance === false) intel = " (no alliance)";
-                    else intel = " (" + alliance + ")";
-                }
-
-                log(`Hostile intruder ${creep.id} from "${creep.owner.username}${intel}" in ${status} room ${creep.pos.roomName}`, {
-                    scope: 'military', 
-                    severity: 'warning', 
-                    roomName: creep.pos.roomName
-                }, body);
-
-                const message = `Hostile intruder ${creep.id} ${JSON.stringify(creep.bodyCount)} from "${creep.owner.username}${intel}" in ${status} room ${creep.pos.roomName}`;
-                Game.notify(message);
-                if(global.alert !== undefined) global.alert(message);
-            }
-        }
-    };
-
-    let registerHostile = creep => {
-        let hostileData = global.partition['hostiles'].getObject(creep.id, false);
-        // if invader unregistered
-        if( hostileData == null ){
-            hostileData = {
-                firstTick: Game.time,
-                maxRetention: Game.time + (creep.ticksToLive || 1500),
-                owner: creep.owner.username, 
-                threat: creep.threat,
-                firstRoom: creep.pos.roomName,
-                latestPos: {
-                    roomName: creep.pos.roomName, 
-                    x: creep.pos.x, 
-                    y: creep.pos.y, 
-                },
-                state: 'open',
-                id: creep.id
-            };
-            logNewHostile(creep);
-        } else {
-            // update latestPos
-            hostileData.latestPos = {
-                roomName: creep.pos.roomName, 
-                x: creep.pos.x, 
-                y: creep.pos.y, 
-            };
-        }
-        global.partition['hostiles'].setObject(creep.id, hostileData);
-    }
-    _.forEach(this.hostiles, registerHostile);
-};
 
 mod.requiringEnergy = function(filter){
     if( Room._requiringEnergy === undefined || Room._requiringEnergySet !== Game.time ){
@@ -1233,6 +1138,8 @@ function analyze(){
         if(room.my) Room.foundOwned.trigger(room);
         else if(room.myReservation) Room.foundReserved.trigger(room);
         else Room.foundOther.trigger(room);
+        const hostiles = room.find(FIND_HOSTILE_CREEPS);
+        hostiles.forEach(Creep.analyzeHostile);
     };
     _.forEach(Game.rooms, found);
 }

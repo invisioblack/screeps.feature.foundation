@@ -1,4 +1,7 @@
 
+// TODO: Implement Creep.spawningStarted event
+// TODO: clear memory on cleanup: mod.staleCreeps & mod.staleHostiles
+
 let feature = context;
 const CRITICAL_TYPES = context.settings.CRITICAL_TYPES;
 const SAY_PUBLIC = context.settings.SAY_PUBLIC;
@@ -458,6 +461,7 @@ Object.defineProperties(Creep.prototype, {
         configurable: true, 
         get: function() {
             if( _.isUndefined(this._bodyCount) ) {
+                // TODO: save to mem
                 this._bodyCount = _.countBy(this.body, part => part.boost ? `${part.type}+${part.boost}` : part.type);
             }
             return this._bodyCount;
@@ -468,7 +472,7 @@ Object.defineProperties(Creep.prototype, {
         get: function() {
             if( _.isUndefined(this._bodyDisplay) ) {
                 this._bodyDisplay = `<style type="text/css">.body{margin: 5px -10px 10px -10px; background-color: #222; padding: 1px 10px 5px 10px;width:200px;overflow:auto;font-family:Arial, sans-serif;white-space:normal;-webkit-font-smoothing:antialiased;line-height: 1.42857143;box-sizing:border-box;}.body label.body-header { display: block; margin-bottom: 5px;font-weight:bold;color:#666;font-size:12px;line-height:1.42857143;}.body label.body-header .pull-right { font-weight: normal; float:right;}.body .bodypart { position: relative; display:inline-block; width: 13px; height: 13px; border-radius: 100%; box-shadow: 0 1px 1px rgba(0, 0, 0, 0.6); margin-right: 5px; overflow: hidden;box-sizing:border-box;}.body .bodypart.type-move { background-color: #a9b7c6;}.body .bodypart.type-work { background-color: #ffe56d;}.body .bodypart.type-attack { background-color: #f93842;} .body .bodypart.type-ranged_attack { background-color: #5d80b2;}.body .bodypart.type-heal { background-color: #65fd62;}.body .bodypart.type-tough { background-color: #fff;}.body .bodypart.type-claim { background-color: #b99cfb;}.body .bodypart.type-carry { background-color: #777;}.body .bodypart.boost { border: 2px solid white; width: 17px; height: 17px; margin-right: 3px; margin-left: -2px; top: 2px;}</style><div class="body" onclick="window.location.href='https://screeps.com/a/#!/room/${this.pos.roomName}'"><label class="body-header">Body<div class="pull-right">${this.body.length} parts</div></label>`;
-                let addPart = part => {
+                const addPart = part => {
                     this._bodyDisplay += `<div class="bodypart ng-scope type-${part.type}${part.boost ? ' boost':''}" title="type: ${part.type}${part.boost ? ', boost: ' + part.boost:''}"></div>`;
                 };
                 this.body.forEach(part => addPart(part));
@@ -479,12 +483,116 @@ Object.defineProperties(Creep.prototype, {
     }
 });
 
+Creep.analyzeHostile = function(creep){
+    let hostileData = global.partition['hostiles'].getObject(creep.id, false);
+    if( hostileData != null && creep.pos.roomName != hostileData.latestPos.roomName ){        
+        // update latestPos
+        hostileData.latestPos = {
+            roomName: creep.pos.roomName, 
+            x: creep.pos.x, 
+            y: creep.pos.y, 
+        };
+        global.partition['hostiles'].setObject(creep.id, hostileData);
+        return;
+    } 
+
+    let category;
+    if( creep.owner.username === 'Invader' ){
+        category = 'Invader';
+        Creep.newInvader.trigger(creep);
+        log(`New invader ${creep.id}!`, {
+            scope: 'military', 
+            severity: 'information', 
+            roomName: creep.pos.roomName
+        }, body);
+    }
+    else if( creep.owner.username === 'Source Keeper' ) {
+        category = 'Source Keeper';
+        Creep.newSourceKeeper.trigger(creep);
+        log(`New Source Keeper ${creep.id}!`, {
+            scope: 'military', 
+            severity: 'verbose', 
+            roomName: creep.pos.roomName
+        }, body);
+    }
+    else if(global.isPlayerWhitelisted !== undefined && global.isPlayerWhitelisted(creep.owner.username) === true ){
+        category = 'Whitelisted';
+        Creep.newWhitelisted.trigger(creep);
+        log(`New whitelisted intruder ${creep.id} from ${creep.owner.username}!`, {
+            scope: 'military', 
+            severity: 'information', 
+            roomName: creep.pos.roomName
+        }, body);
+    }
+    else if( !creep.room.my && !creep.room.myReservation ) {
+        category = 'EnemyOnNeutralGround';
+        // TODO: Filter for intruders on rooms marked for claiming/mining etc...
+        Creep.newEnemyOnNeutralGround.trigger(creep);
+        log(`Foreign creep ${creep.id} from "${creep.owner.username}"`, {
+            scope: 'military', 
+            severity: 'informtion', 
+            roomName: creep.pos.roomName
+        }, body);
+    } else {
+        category = 'Enemy';
+        Creep.newEnemy.trigger(creep);
+        const status = creep.room.my ? "owned" : "reserved";
+        let intel = "";
+        if( global.lib !== undefined && global.lib.roomIntel !== undefined ){
+            const alliance = global.lib.roomIntel.getUserAlliance(creep.owner.username);
+            if( alliance === false) intel = " (no alliance)";
+            else intel = " (" + alliance + ")";
+        }
+
+        log(`Hostile intruder ${creep.id} from "${creep.owner.username}${intel}" in ${status} room ${creep.pos.roomName}`, {
+            scope: 'military', 
+            severity: 'warning', 
+            roomName: creep.pos.roomName
+        }, body);
+
+        const message = `Hostile intruder ${creep.id} ${JSON.stringify(creep.bodyCount)} from "${creep.owner.username}${intel}" in ${status} room ${creep.pos.roomName}`;
+        if(global.alert !== undefined) global.alert(message);
+        else Game.notify(message);
+    }
+
+    // register invader
+    if( hostileData != null ){        
+        // update latestPos
+        hostileData.latestPos = {
+            roomName: creep.pos.roomName, 
+            x: creep.pos.x, 
+            y: creep.pos.y, 
+        };
+        hostileData.state = 'open';
+        hostileData.category = category;
+    }
+    else {
+        hostileData = {
+            firstTick: Game.time,
+            maxRetention: Game.time + (creep.ticksToLive || 1500),
+            owner: creep.owner.username, 
+            threat: creep.threat,
+            firstRoom: creep.pos.roomName,
+            latestPos: {
+                roomName: creep.pos.roomName, 
+                x: creep.pos.x, 
+                y: creep.pos.y, 
+            },
+            state: 'open',
+            id: creep.id, 
+            category
+        };    
+    }
+    global.partition['hostiles'].setObject(creep.id, hostileData);
+};
+
 function flush(){
     Creep.spawningStarted = new LiteEvent();
     Creep.spawningCompleted = new LiteEvent();
     Creep.own = new LiteEvent();
     Creep.predictedRenewal = new LiteEvent();
-    Creep.died = new LiteEvent(); 
+    Creep.died = new LiteEvent();
+
     Creep.newInvader = new LiteEvent();
     Creep.knownInvader = new LiteEvent();  
     Creep.goneInvader = new LiteEvent();
@@ -494,12 +602,97 @@ function flush(){
     Creep.newEnemy = new LiteEvent();
     Creep.knownEnemy = new LiteEvent();
     Creep.goneEnemy = new LiteEvent();
+    Creep.newEnemyOnNeutralGround = new LiteEvent();
+    Creep.knownEnemyOnNeutralGround= new LiteEvent();
+    Creep.goneEnemyOnNeutralGround= new LiteEvent();
     Creep.newWhitelisted = new LiteEvent();
     Creep.knownWhitelisted = new LiteEvent();
     Creep.goneWhitelisted = new LiteEvent();
 }
 
+function creepDied(name) {
+    log(`${name} died`, {
+        severity: 'verbose', 
+        scope: 'census'
+    });
+    Creep.died.trigger(name);
+}
+function creepSpawning(name) {
+    // count spawning time
+    global.partition['volatile'].set(data => {
+        let m = data[name] || {};
+        let spawningTime = m['spawningTime'] || 0;
+        m['spawningTime'] = ++spawningTime;
+        data[this.name] = m;
+    });
+}
+function spawningCompleted(creep){
+    if( creep.memory.predictedRenewal === undefined ) creep.memorySet('predictedRenewal', creep.volatile.spawningTime + 50);
+    creep.memorySet('spawningTime', creep.volatile.spawningTime);
+    creep.volatileDelete('spawningTime');
+    Creep.spawningCompleted.trigger(creep);
+}
+function predictedRenewal(creep){
+    log(`${creep.name} will die soon`, {
+        roomName: creep.pos.roomName, 
+        severity: 'verbose', 
+        scope: 'census'
+    });
+    Creep.predictedRenewal.trigger(creep);
+}
+function analyzeCreepMemory(memory, name){
+    let creep = Game.creeps[name];
+
+    if ( !creep ) {
+        creepDied(name);
+        return;
+    }
+    if( creep.my ){
+        if( creep.spawning ) creepSpawning(name);
+        else {
+            if( creep.ticksToLive === ( creep.bodyCount.claim !== undefined ? 499 : 1499 ) ) spawningCompleted(creep);
+            else if( creep.ticksToLive === ( creep.memory.predictedRenewal ? creep.memory.predictedRenewal : creep.memory.spawningTime)) predictedRenewal(creep);
+        }
+        Creep.own.trigger(creep);
+    }
+}
+const analyzeHostileMemoryHandler = {
+    gone: {
+        'Invader': Creep.goneInvader.trigger,
+        'Source Keeper': Creep.goneSourceKeeper.trigger,
+        'Whitelisted': Creep.goneWhitelisted.trigger,
+        'EnemyOnNeutralGround': Creep.goneEnemyOnNeutralGround.trigger,
+        'Enemy': Creep.goneEnemy.trigger
+    }, 
+    known: {
+        'Invader': Creep.knownInvader.trigger,
+        'Source Keeper': Creep.knownSourceKeeper.trigger,
+        'Whitelisted': Creep.knownWhitelisted.trigger,
+        'EnemyOnNeutralGround': Creep.knownEnemyOnNeutralGround.trigger,
+        'Enemy': Creep.knownEnemy.trigger
+    }
+}
+function analyzeHostileMemory(memory, id){
+    let creep = Game.getObjectById(id);
+    if(memory.latestPos === undefined){            
+        log(`Corrupt hostile entry ${id}`, {
+            severity: 'error',
+            scope: 'Memory'
+        }, memory);
+    }
+    const room = memory.latestPos === undefined ? null : Game.rooms[memory.latestPos.roomName];
+    if( (memory.maxRetention && memory.maxRetention <= Game.time) || (creep == null && room != null) ){
+        const handler = analyzeHostileMemoryHandler.gone[memory.category];
+        if( handler != null ) handler(id);
+    } else {
+        const handler = analyzeHostileMemoryHandler.known[memory.category];
+        if( handler != null ) handler(creep);
+    }
+}
+
 function analyze(){
+    _.forEach(global.partition['creeps'].data, analyzeCreepMemory);
+    _.forEach(global.partition['hostiles'].data, analyzeHostileMemory);   
 }
 
 function execute(){
@@ -507,21 +700,37 @@ function execute(){
     Creep.spawningCompleted.release();
     Creep.own.release();
     Creep.predictedRenewal.release();
-    Creep.died.release();
+    // TODO: clear memory on flush
+    mod.staleCreeps = Creep.died.release();
     Creep.newInvader.release();
     Creep.knownInvader.release();
-    Creep.goneInvader.release();
+    const goneInvader = Creep.goneInvader.release();
     Creep.newSourceKeeper.release();
     Creep.knownSourceKeeper.release();
-    Creep.goneSourceKeeper.release();
+    const goneSourceKeeper = Creep.goneSourceKeeper.release();
     Creep.newEnemy.release();
     Creep.knownEnemy.release();
-    Creep.goneEnemy.release();
+    const goneEnemy = Creep.goneEnemy.release();
+    Creep.newEnemyOnNeutralGround.release();
+    Creep.knownEnemyOnNeutralGround.release();
+    const goneEnemyOnNeutralGround = Creep.goneEnemyOnNeutralGround.release();
     Creep.newWhitelisted.release();
     Creep.knownWhitelisted.release();
-    Creep.goneWhitelisted.release();
+    const goneWhitelisted = Creep.goneWhitelisted.release();
+    
+    mod.staleHostiles = [];
+    if( goneInvader != null && goneInvader.length !== 0 ) Array.prototype.push.apply(mod.staleHostiles, goneInvader);
+    if( goneSourceKeeper != null && goneSourceKeeper.length !== 0 ) Array.prototype.push.apply(mod.staleHostiles, goneSourceKeeper);
+    if( goneEnemy != null && goneEnemy.length !== 0 ) Array.prototype.push.apply(mod.staleHostiles, goneEnemy);
+    if( goneEnemyOnNeutralGround != null && goneEnemyOnNeutralGround.length !== 0 ) Array.prototype.push.apply(mod.staleHostiles, goneEnemyOnNeutralGround);
+    if( goneWhitelisted != null && goneWhitelisted.length !== 0 ) Array.prototype.push.apply(mod.staleHostiles, goneWhitelisted);    
+}
+
+function cleanup(){
+    // TODO: clear memory: mod.staleCreeps & mod.staleHostiles
 }
 
 context.flush.on(flush);
 context.analyze.on(analyze);
 context.execute.on(execute);
+context.cleanup.on(cleanup);
