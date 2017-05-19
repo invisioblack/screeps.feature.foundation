@@ -2,6 +2,25 @@
 const STRUCTURE_REANALYSYS = 10010;
 let feature = context;
 const USERNAME = context.settings.USERNAME;
+const DECAYABLES = [
+    STRUCTURE_ROAD,
+    STRUCTURE_CONTAINER,
+    STRUCTURE_RAMPART];
+const DECAY_AMOUNT = {
+    'rampart': RAMPART_DECAY_AMOUNT, // 300
+    'road': ROAD_DECAY_AMOUNT, // 100
+    'container': CONTAINER_DECAY, // 5000
+};
+const MAX_REPAIR_LIMIT = { // Limits how high structures get repaired by towers, regarding RCL
+    1: 1000,
+    2: 1000,
+    3: 2000,
+    4: 4000,
+    5: 8000,
+    6: 15000,
+    7: 20000,
+    8: 40000
+};
 
 let mod = {};
 module.exports = mod;
@@ -370,6 +389,7 @@ function Structures(room){
     this.labs = [];
     this.keeperLairs = [];
     this.roads = [];
+    this.driveByRepairable = [];
     this.asGoals = [];
 
     let typeHandler = {};
@@ -392,6 +412,21 @@ function Structures(room){
     typeHandler[STRUCTURE_EXTRACTOR] = structure => that.extractor = structure;
     typeHandler[STRUCTURE_NUKER] = structure => that.nuker = structure;
     typeHandler[STRUCTURE_OBSERVER] = structure => that.observer = structure;
+
+    const localOrangeFlags = _.filter(Game.flags, f => f.roomName === structure.pos.roomName && f.color === COLOR_ORANGE);
+    const findDriveByRepairable = structure => {
+        const isDecayable = DECAYABLES.includes(structure.structureType);
+        let thresholds = [structure.hitsMax];
+        if( that.room.my ) thresholds.push(MAX_REPAIR_LIMIT[that.room.rcl]);
+        if( isDecayable ) thresholds.push(2*DECAY_AMOUNT[structure.structureType]);
+        let maxRepair = Math.min(thresholds);
+
+        if( (that.room.my || structure.my || isDecayable) && // owned or decayable
+            structure.hits < maxRepair && // is not at 100%
+            !localOrangeFlags.some(f => f.x === structure.pos.x && f.y === structure.pos.y) // not flagged for removal
+        )
+            this.driveByRepairable.push(structure);
+    };
     // STRUCTURE_WALL
     // STRUCTURE_RAMPART
     // STRUCTURE_PORTAL
@@ -406,6 +441,7 @@ function Structures(room){
     let assign = structure => {
         let handler = typeHandler[structure.structureType];
         if( handler != null ) handler(structure);
+        findDriveByRepairable(structure);
         this.asGoals.push({pos: structure.pos, range: 1});
     };
     this.all.forEach(assign);
@@ -581,10 +617,7 @@ Object.defineProperties(Room.prototype, {
     'constructionSites': {
         configurable: true,
         get: function() {
-            if( this._constructionSites === undefined ) {
-                this._constructionSites = this.find(FIND_MY_CONSTRUCTION_SITES);
-            }
-            return this._constructionSites;
+            return this.find(FIND_MY_CONSTRUCTION_SITES);
         }
     },
     'exitsAsGoals': {
