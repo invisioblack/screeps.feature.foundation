@@ -12,6 +12,27 @@ Flag.prototype = Object.create(Flag.prototype, {
         }
     }
 });
+
+// recreate objects with new prototype
+_.forEach(Game.flags, flag => {
+    Game.flags[flag.name] = new Flag(flag.name, flag.color, flag.secondaryColor, flag.pos.roomName, flag.pos.x, flag.pos.y);
+});
+
+Flag.prototype.memorySet = function(name, value){
+    global.partition['flags'].set(data => {
+        let m = data[this.name] || {};
+        m[name] = value;
+        data[this.name] = m;
+    });
+};
+Flag.prototype.memoryDelete = function(name){
+    global.partition['flags'].set(data => {
+        let m = data[this.name] || {};
+        delete m[name];
+        data[this.name] = m;
+    });
+};
+
 Object.defineProperty(Flag.prototype, 'cloaking', {
     configurable: true,
     get: function() {
@@ -23,23 +44,6 @@ Object.defineProperty(Flag.prototype, 'cloaking', {
         global.partition['volatile'].setObject(this.name, mem);
     }
 });
-
-_.forEach(Game.flags, flag => {
-    Game.flags[flag.name] = new Flag(flag.name, flag.color, flag.secondaryColor, flag.pos.roomName, flag.pos.x, flag.pos.y);
-});
-/*
-    Object.defineProperty(Flag.prototype, 'data', {
-        configurable: true,
-        get: function() {
-            return global.partition['flags'].getObject(this.name);
-        },
-        set: function(value) {
-            global.partition['flags'].setObject(this.name, value);
-        }
-    });
-mod.extend = function(){
-};
-    */
 
 function flush(){
     // occurs when a flag is found (each tick)

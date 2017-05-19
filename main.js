@@ -21,16 +21,10 @@ function flush(){
 context.flush.on(flush);
 /*
 function execute(){
-    Flag.found.release();
-    mod.staleFlags = Flag.removed.release();
     Creep.spawningStarted.release();
     Creep.spawningCompleted.release();
     Creep.predictedRenewal.release();
     Creep.died.release();
-    Room.newInvader.release();
-    Room.knownInvader.release();
-    Room.goneInvader.release();
-    Room.collapsed.release();
 }
 
 context.flush.on(flush);

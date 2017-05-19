@@ -36,9 +36,25 @@ Room.prototype = Object.create(Room.prototype, {
     }
 });
 
+// recreate objects with new prototype
 _.forEach(Game.rooms, room => {
     Game.rooms[room.name] = new Room(room.name);
 });
+
+Room.prototype.memorySet = function(name, value){
+    global.partition['rooms'].set(data => {
+        let m = data[this.name] || {};
+        m[name] = value;
+        data[this.name] = m;
+    });
+};
+Room.prototype.memoryDelete = function(name){
+    global.partition['rooms'].set(data => {
+        let m = data[this.name] || {};
+        delete m[name];
+        data[this.name] = m;
+    });
+};
 
 function Container(room){
     this.room = room;
@@ -413,7 +429,7 @@ function Structures(room){
     typeHandler[STRUCTURE_NUKER] = structure => that.nuker = structure;
     typeHandler[STRUCTURE_OBSERVER] = structure => that.observer = structure;
 
-    const localOrangeFlags = _.filter(Game.flags, f => f.roomName === structure.pos.roomName && f.color === COLOR_ORANGE);
+    const localOrangeFlags = _.filter(Game.flags, f => f.roomName === that.room.name && f.color === COLOR_ORANGE);
     const findDriveByRepairable = structure => {
         const isDecayable = DECAYABLES.includes(structure.structureType);
         let thresholds = [structure.hitsMax];
@@ -447,10 +463,6 @@ function Structures(room){
     this.all.forEach(assign);
 };
 
-/*
-mod.extend = function(){
-};
-*/
 Object.defineProperties(Room.prototype, {
     'volatile': {
         configurable: true,
@@ -1211,18 +1223,6 @@ function flush(){
     // param: room
     Room.foundOther = new LiteEvent();
 
-    // ocurrs when a new invader has been spotted for the first time
-    // param: invader creep
-    Room.newInvader = new LiteEvent();
-    
-    // ocurrs every tick since an invader has been spotted until its not in that room anymore (will also occur when no sight until validated its gone)
-    // param: invader creep id
-    Room.knownInvader = new LiteEvent();
-    
-    // ocurrs when an invader is not in the same room anymore (or died). will only occur when (or as soon as) there is sight in the room.
-    // param: invader creep id
-    Room.goneInvader = new LiteEvent();
-    
     // ocurrs when a room is considered to have collapsed. Will occur each tick until solved.
     // param: room
     Room.collapsed = new LiteEvent();
@@ -1233,7 +1233,6 @@ function analyze(){
         if(room.my) Room.foundOwned.trigger(room);
         else if(room.myReservation) Room.foundReserved.trigger(room);
         else Room.foundOther.trigger(room);
-        room.processInvaders();
     };
     _.forEach(Game.rooms, found);
 }
@@ -1242,9 +1241,6 @@ function execute(){
     Room.foundOwned.release();
     Room.foundReserved.release();
     Room.foundOther.release();
-    Room.newInvader.release();
-    Room.knownInvader.release();
-    Room.goneInvader.release();
     Room.collapsed.release();
 }
 

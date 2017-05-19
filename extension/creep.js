@@ -28,20 +28,6 @@ Creep.prototype = Object.create(Creep.prototype, {
         },
         set: function (value) {
             global.partition['creeps'].setObject(this.name, value);
-        }, 
-        setsub: function(name, value){
-            global.partition['creeps'].set(data => {
-                let m = data[this.name];
-                m[name] = value;
-                data[this.name] = m;
-            });
-        }, 
-        delete: function(name){
-            global.partition['creeps'].set(data => {
-                let m = data[this.name];
-                delete m[name];
-                data[this.name] = m;
-            });
         }
     },     
     volatile: {
@@ -54,6 +40,41 @@ Creep.prototype = Object.create(Creep.prototype, {
     }
 });
 
+// recreate objects with new prototype
+_.forEach(Game.creeps, creep => {
+    Game.creeps[creep.name] = new Creep(creep.id);
+});
+
+Creep.prototype.memorySet = function(name, value){
+    global.partition['creeps'].set(data => {
+        let m = data[this.name] || {};
+        m[name] = value;
+        data[this.name] = m;
+    });
+};
+Creep.prototype.memoryDelete = function(name){
+    global.partition['creeps'].set(data => {
+        let m = data[this.name] || {};
+        delete m[name];
+        data[this.name] = m;
+    });
+};
+Creep.prototype.volatileSet = function(name, value){
+    global.partition['volatile'].set(data => {
+        let m = data[this.name] || {};
+        m[name] = value;
+        data[this.name] = m;
+    });
+};
+Creep.prototype.volatileDelete = function(name){
+    global.partition['volatile'].set(data => {
+        let m = data[this.name] || {};
+        delete m[name];
+        data[this.name] = m;
+    });
+};
+
+/*
 global.state.creepRunOk = function(){
     if( global.state._creepRunOkTick !== Game.time ){
         global.state._creepRunOk = global.state.bucketLevel > (global.isBadNode ? 0.8 : 0.5);
@@ -69,7 +90,6 @@ Creep.prototype.run = function(behaviour){
                 scope: 'CreepAction', 
                 severity: 'verbose'
             });
-/*
             if(!behaviour && this.memory && this.memory.type) {
                 behaviour = Creep.behaviour[this.memory.type] || Creep.behaviour.generic;
             }
@@ -84,7 +104,6 @@ Creep.prototype.run = function(behaviour){
                     }, e);
                 }
             }
-*/
             if( this.flee ) {
                 this.fleeMove();
                 this.say('💫', SAY_PUBLIC);
@@ -92,6 +111,7 @@ Creep.prototype.run = function(behaviour){
         }
     }
 };
+*/
 
 
 // moveRange: how near should the creep approach?
@@ -132,9 +152,9 @@ Creep.prototype.drive = function( targetPos, moveRange = 1, workRange = 1, range
             path = path.substr(0,5);
     } else if( didMove === true && this.memory.path != null ){
         // use old path
-        path = this.memory.path.substr(1);
+        path = path.substr(1);
     }
-    this.volatile.setsub('path', path);
+    this.volatileSet('path', path);
 
     // move
     let moveResult = null;
@@ -153,9 +173,9 @@ Creep.prototype.drive = function( targetPos, moveRange = 1, workRange = 1, range
         this.leaveBorder();
     } else if( moveResult === OK ) {
         // move intent registered
-        if( state === 'moved' || mustMove === false ) this.volatile.setsub('moveMode', 'auto');
-        else this.volatile.setsub('moveMode', 'evade');
-        this.volatile.setsub('lastPos', {
+        if( state === 'moved' || mustMove === false ) this.volatileSet('moveMode', 'auto');
+        else this.volatileSet('moveMode', 'evade');
+        this.volatileSet('lastPos', {
             x: this.pos.x, 
             y: this.pos.y, 
             roomName: this.pos.roomName
@@ -239,9 +259,9 @@ Creep.prototype.fleeMove = function() {
     if( fleePath != null && fleePath.length > 0 ){
         let nextPos = fleePath.shift();
 
-        if( fleePath.length === 0 ) this.volatile.delete('fleePath');
-        else this.volatile.setsub('fleePath', fleePath);
-        this.volatile.delete('path');
+        if( fleePath.length === 0 ) this.volatileDelete('fleePath');
+        else this.volatileSet('fleePath', fleePath);
+        this.volatileDelete('path');
 
         let dir = this.pos.getDirectionTo(new RoomPosition(nextPos.x, nextPos.y, nextPos.roomName));
         return this.move(dir);
@@ -287,8 +307,8 @@ Creep.prototype.idleMove = function( ) {
             let nextPos = idlePath.shift();
 
             if( idlePath.length === 0 ) this.volatile.delete('idlePath');
-            else this.volatile.setsub('idlePath', idlePath);
-            this.volatile.delete('path');
+            else this.volatileSet('idlePath', idlePath);
+            this.volatileDelete('path');
 
             let dir = this.pos.getDirectionTo(new RoomPosition(nextPos.x, nextPos.y, nextPos.roomName));
             return this.move(dir);
@@ -329,7 +349,7 @@ function bodyThreat(body) {
     };
     if( body ) body.forEach(evaluatePart);
     return threat;
-};
+}
 
 function bodyCosts(body){
     let costs = 0;
@@ -339,8 +359,8 @@ function bodyCosts(body){
         });
     }
     return costs;
-};
-// params: {minThreat, maxWeight, maxMulti}
+}
+// params: {fixedBody, multiBody, minThreat, maxWeight, maxMulti}
 function multi(room, params) {
     let multiBody = params.multiBody;
     if( !multiBody || multiBody.length === 0 ) return 0;
@@ -364,14 +384,15 @@ function multi(room, params) {
     let maxWeightMulti = (params && params.maxWeight) ? Math.floor((params.maxWeight-fixedCosts)/multiCosts) : Infinity;
     let maxMulti = (params && params.maxMulti) ? params.maxMulti : Infinity;
     return _.min([maxParts, maxAffordable, maxThreatMulti, maxWeightMulti, maxMulti]);
-};
+}
 function partsComparator(a, b) {
     let partsOrder = [TOUGH, CLAIM, WORK, CARRY, ATTACK, RANGED_ATTACK, HEAL, MOVE];
     let indexOfA = partsOrder.indexOf(a);
     let indexOfB = partsOrder.indexOf(b);
     return indexOfA - indexOfB;
-};
-// params: {minThreat, maxWeight, maxMulti}
+}
+
+// params: {fixedBody, multiBody, minThreat, maxWeight, maxMulti}
 Creep.compileBody = function (room, params, sort = true) {
     let parts = [];
     let multi = multi(room, params);
@@ -398,20 +419,20 @@ Object.defineProperties(Creep.prototype, {
             if( this.volatile.flee === true ){
                 // release when restored
                 if( this.hits === this.hitsMax )
-                    this.volatile.setsub('flee', false);
+                    this.volatileSet('flee', false);
                 else flee = true;
             } else {
                 // set when low
                 let hostiles = this.room.hostiles;
                 if( hostiles != null && hostiles.length !== 0 && (this.hits/this.hitsMax) < 0.35 ){
-                    this.volatile.setsub('flee', true);
+                    this.volatileSet('flee', true);
                     flee = true;
                 }
             }
             return flee;
         },
         set: function(value) {
-            this.volatile.setsub('flee', value);
+            this.volatileSet('flee', value);
         }
     },
     'sum': {
@@ -458,14 +479,49 @@ Object.defineProperties(Creep.prototype, {
     }
 });
 
+function flush(){
+    Creep.spawningStarted = new LiteEvent();
+    Creep.spawningCompleted = new LiteEvent();
+    Creep.own = new LiteEvent();
+    Creep.predictedRenewal = new LiteEvent();
+    Creep.died = new LiteEvent(); 
+    Creep.newInvader = new LiteEvent();
+    Creep.knownInvader = new LiteEvent();  
+    Creep.goneInvader = new LiteEvent();
+    Creep.newSourceKeeper = new LiteEvent();
+    Creep.knownSourceKeeper = new LiteEvent();
+    Creep.goneSourceKeeper = new LiteEvent();
+    Creep.newEnemy = new LiteEvent();
+    Creep.knownEnemy = new LiteEvent();
+    Creep.goneEnemy = new LiteEvent();
+    Creep.newWhitelisted = new LiteEvent();
+    Creep.knownWhitelisted = new LiteEvent();
+    Creep.goneWhitelisted = new LiteEvent();
+}
+
+function analyze(){
+}
+
 function execute(){
-    let run = creep => creep.run();
-    _.forEach(Game.creeps, run);
-};
+    Creep.spawningStarted.release();
+    Creep.spawningCompleted.release();
+    Creep.own.release();
+    Creep.predictedRenewal.release();
+    Creep.died.release();
+    Creep.newInvader.release();
+    Creep.knownInvader.release();
+    Creep.goneInvader.release();
+    Creep.newSourceKeeper.release();
+    Creep.knownSourceKeeper.release();
+    Creep.goneSourceKeeper.release();
+    Creep.newEnemy.release();
+    Creep.knownEnemy.release();
+    Creep.goneEnemy.release();
+    Creep.newWhitelisted.release();
+    Creep.knownWhitelisted.release();
+    Creep.goneWhitelisted.release();
+}
 
+context.flush.on(flush);
+context.analyze.on(analyze);
 context.execute.on(execute);
-
-// recreate objects with new prototype
-_.forEach(Game.creeps, creep => {
-    Game.creeps[creep.name] = new Creep(creep.id);
-});
