@@ -7,10 +7,6 @@ Basic foundation to get screeps up & running.
 
 Analyzes rooms, flags & creeps & triggers events.  
 Serves as basis for higher features.  
-May get reduced (split up to separate features) in the future.
-
-Key value this feature offers is a) added properties to game objects and b) the huge amount of events. Higher features can simply hook into them to implement tasks/jobs.
-
 
 ## Available Events
 
