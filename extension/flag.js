@@ -2,7 +2,32 @@
 let mod = {};
 module.exports = mod;
 
-mod.extend = function(){
+Flag.prototype = Object.create(Flag.prototype, {
+    memory: {
+        get: function () {
+            return global.partition['flags'].getObject(this.name);
+        },
+        set: function (value) {
+            global.partition['flags'].setObject(this.name, value);
+        }
+    }
+});
+Object.defineProperty(Flag.prototype, 'cloaking', {
+    configurable: true,
+    get: function() {
+        return global.partition['volatile'].getObject(this.name).cloaking || 0;
+    },
+    set: function(value) {
+        let mem = global.partition['volatile'].getObject(this.name);
+        mem.cloaking = value;
+        global.partition['volatile'].setObject(this.name, mem);
+    }
+});
+
+_.forEach(Game.flags, flag => {
+    Game.flags[flag.name] = new Flag(flag.name, flag.color, flag.secondaryColor, flag.pos.roomName, flag.pos.x, flag.pos.y);
+});
+/*
     Object.defineProperty(Flag.prototype, 'data', {
         configurable: true,
         get: function() {
@@ -12,18 +37,9 @@ mod.extend = function(){
             global.partition['flags'].setObject(this.name, value);
         }
     });
-    Object.defineProperty(Flag.prototype, 'cloaking', {
-        configurable: true,
-        get: function() {
-            return global.partition['volatile'].getObject(this.name).cloaking || 0;
-        },
-        set: function(value) {
-            let mem = global.partition['volatile'].getObject(this.name);
-            mem.cloaking = value;
-            global.partition['volatile'].setObject(this.name, mem);
-        }
-    });
+mod.extend = function(){
 };
+    */
 
 function flush(){
     // occurs when a flag is found (each tick)

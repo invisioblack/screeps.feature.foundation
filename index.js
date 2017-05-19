@@ -18,5 +18,6 @@ mod.install = function(){
     context.load('extension.misc').extend();
     context.inject(Flag, 'extension.flag');
     context.inject(Room, 'extension.room');
+    context.inject(Creep, 'extension.creep');
     context.load('main');
 };
