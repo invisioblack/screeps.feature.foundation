@@ -1,7 +1,7 @@
 
 ## cyberblast/screeps.feature.foundation
 
-This is a feature extension for the [screeps engine repository](https://github.com/cyberblast/screeps.engine).
+This is a feature extension for the [cyberblast/screeps.modularEngine](https://github.com/cyberblast/screeps.modularEngine) repository.
 
 Basic foundation to get screeps up & running.  
 

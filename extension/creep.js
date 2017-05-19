@@ -700,7 +700,6 @@ function execute(){
     Creep.spawningCompleted.release();
     Creep.own.release();
     Creep.predictedRenewal.release();
-    // TODO: clear memory on flush
     mod.staleCreeps = Creep.died.release();
     Creep.newInvader.release();
     Creep.knownInvader.release();
