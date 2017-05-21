@@ -6,13 +6,15 @@ mod.dependencies = ['navigation'];
 mod.install = function(){
     context.requiresMemory = false;
     context.memoryPartitions = ['objects', 'volatile', 'rooms', 'hostiles', 'flags', 'creeps'];
-    
-    context.defaultValue('USERNAME', 'unknown');
-    context.defaultValue('LOG_VISUAL_BODY', true);
-    context.defaultValue('CRITICAL_TYPES', ['miner', 'hauler', 'upgrader', 'warrior', 'melee', 'ranger', 'healer']);
-    context.defaultValue('SAY_PUBLIC', false);
-    context.defaultValue('CONTROLLER_SIGN', false);
-    context.defaultValue('CONTROLLER_SIGN_MESSAGE', '');
+
+    context.defaultValues({
+        USERNAME: 'unknown',
+        LOG_VISUAL_BODY: true,
+        CRITICAL_TYPES: ['miner', 'hauler', 'upgrader', 'warrior', 'melee', 'ranger', 'healer'],
+        SAY_PUBLIC: false,
+        CONTROLLER_SIGN: false,
+        CONTROLLER_SIGN_MESSAGE: ''
+    });
 
     context.logScopes = {
         military: {severity: 'verbose'},
